@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html manifest="main.appcache">
+<head>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/backbone.js/1.2.0/backbone-min.js"></script>
+</head>
+<body>
+    <ul class="todos">
+    </ul>
+    <script defer>
+    /**
+     * A To-do model
+     */
+    var TodoModel = Backbone.Model.extend({
+        
+        /**
+         * constructor
+         * This is run whenever a new to-do object is created
+         *
+         * @param Object attributes contains the data to store into this model
+         * @param Object options noop so far
+         * @return TodoModel created object
+         */
+        intialize: function (attributes, options) {
+            // no filters or validations just yet
+            this.set(attributes);
+        }
+    });
+
+    /**
+     * View for a To-do item
+     */
+    var TodoView = Backbone.View.extend({
+        tagName: 'li',
+        className: function () {
+            return !! this.el ? this.el.className : 'todo';
+        },
+
+        initialize: function (options) {
+            this.model.bind('change:name', this.renderName, this); // we can perform micro updates to the DOM if we listen to individual change
+            this.render(); // should only be called once
+        },
+
+        renderName: function () {
+            this.$('.post-name').text( this.model.get('name') );
+            return this;
+        },
+
+        render: function () {
+            this.el.innerHTML = '<p class="post-name">' + this.model.get('name') + '</p>';
+            this.el.innerHTML += '<p class="post-desc">' + this.model.get('desc') + '</p>';
+            return this;
+        }
+    });
+
+    /**
+     * A collection of to-do items
+     */
+    var TodosCollection = Backbone.Collection.extend({
+        model: TodoModel,
+    });
+
+    /**
+     * View for the to-do collection
+     */
+    var TodosView = Backbone.View.extend({
+
+        /**
+         * Constructor
+         * make sure to specify this.el which we'll be appending to
+         */
+        initialize: function (options) {
+            this.currentFragment = document.createDocumentFragment();
+            this.collection.on('change:desc', function (todoModel) {
+                console.log('I am called');
+            }, this);
+            this.render();
+        },
+
+        render: function () {
+            this.collection.each(function (todo) {
+                var todoView = new TodoView( { model: todo } );
+                this.currentFragment.appendChild(todoView.el);
+            }, this);
+            this.el.appendChild(this.currentFragment);
+        }
+    });
+    </script>
+    <template id="entry-tpl">
+        <li id="waitlist_entry" style="display: none">
+            <div class="waitlist_container">
+                <span class="status-indicator"></span>
+                <span class="indicators">
+                    <span class="party-size"></span>
+                    <span class="time-big"></span>
+                    <span class="table-no"></span>
+                </span>
+                <div class="buttons">
+                    <?php if ($enable_profiles === true): ?>
+                        <a class="profile"></a>
+                    <?php endif; ?>
+                    <a class="notify"><span class="notify_number"></span></a>
+                    <a class="sat"></a>
+                    <a class="noshow"></a>
+                    <a class="moveback"></a>
+                </div>
+                <h1>John Doe</h1>
+                <div class="waittime">
+                    <span class="is-web">online</span>
+                    <span class="minutes-quoted"></span> 
+                    <span class="minutes-waited">
+                        <span class="hide_in_portrait minutes-waited-longform">waiting </span>
+                        <span class="minutes">0</span>
+                    </span> 
+                    <span class="minutes-instore">
+                        <span class="long">
+                            (<span class="minutes"></span>&nbsp;instore)
+                        </span>
+                        <span class="short"></span>
+                    </span>
+                    <span class="wait-since-ping">(<span class="minutes minutes-since-ping">0</span>m)</span>
+                </div>
+                <p class="phone"></p>
+                <p class="notes"></p>
+                <p class="user-response-text more"></p>
+                <p class="web-msg">online res made on <span class="created-date"></span></p>
+            </div>
+        </li>
+    </template>
+</body>
+</html>
