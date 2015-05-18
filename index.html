@@ -44,14 +44,15 @@
                 }
 
                 // listen for any changes to the data
-                this.on('change:status', this._onStatusChanged, this);
+                this.on('change:status', this._onStatus, this);
+                this.on('change:userResponse', this._processResponse, this);
                 this.on('change:checkedin_at', this._updateWaitingTime, this);
             },
 
             /**
              * Hook for when status of the model changes
              */
-            _onStatusChanged: function () {
+            _onStatus: function () {
                 this._changeCancelToNoShow();
 
                 // update completed timestamp if we just moved to history list
@@ -63,6 +64,27 @@
                 // we moved from history list back to current list
                 if ( /queued|notify/i.test(this.get('status')) && this.get('completed_at_ts') !== null ) {
                     this.set('completed_at_ts', null);
+                }
+
+                // move queues
+                console.log(this.queues);
+            },
+
+            /**
+             * Process user/error response
+             * @return EntryModel this
+             */
+            _processResponse: function () {
+                var response = this.get('userResponse'),
+                    hasResponse = this.get('completed_at_ts') === null && response !== null && response.length > 0;
+
+                if (hasResponse) {
+                    if (response.match(/^Error:/)) {
+                        this.set({ errorResponse: response });
+                    }
+                    else if (/*WLApp.config.enableTwoWayText &&*/ this.get('status') !== 'usercancel') {
+                        this.set({ userResponse: 'Response: ' + response }, { silent: true }); // silence it so it doesn't trigger this function again
+                    }
                 }
             },
 
@@ -156,19 +178,42 @@
          */
         EntryView = Backbone.View.extend({
             tagName: 'li',
+
             template: _.template(document.getElementById('entry-tpl').innerHTML),
 
             className: 'entry', // initial only, access className at: this.el.className
 
             initialize: function (options) {
                 this.render();
+                this.model.bind('change:userResponse', this._onUserResponse, this);
                 this.model.bind('change', this.render, this);
             },
 
             render: function () {
-                this.el.innerHTML = this.template(this.model.toJSON());
+                var waitlistContainerEl = this.el.querySelector('.waitlist_container'),
+                    content = this.template(this.model.toJSON());
+
+                if (waitlistContainerEl !== null) { // hasn't rendered initially yet, so include container
+                    waitlistContainerEl.innerHTML = content;
+                }
+                else { // just replace contents of container so that the className is not replaced by render()
+                    this.el.innerHTML = content;
+                }
                 return this;
-            }
+            },
+
+            /**
+             * Process user response when there is one
+             * @return EntryView this
+             */
+            _onUserResponse: function (model) {
+                var response = model.get('userResponse'),
+                    error = model.get('errorResponse');
+
+                this.el.classList.toggle('has_user_response', !! response && response.length > 0);
+                this.el.classList.toggle('has_error_response', !! error && error.length > 0);
+            },
+
         });
 
         /**
@@ -188,21 +233,51 @@
              * make sure to specify this.el which we'll be appending to
              */
             initialize: function (options) {
-                this.currentFragment = document.createDocumentFragment();
+                this.queues = {
+                    current: [],
+                    wait: [],
+                    res: [],
+                    sat: []
+                },
 
-                this.collection.each(function (entry) {
-                    var entryView = new EntryView( { model: entry } );
-                    this.currentFragment.appendChild(entryView.el);
-                }, this);
+                this.collection.each(this._addToProperQueue, this);
 
                 // listen to model changes
-                this.collection.on('change:desc', console.log, this);
+                this.collection.on('change:status', this._addToProperQueue, this);
                 this.render();
             },
 
+            /**
+             * Refreshes which entries to show
+             */
             render: function () {
-                this.el.appendChild(this.currentFragment);
-            }
+                var fragment = document.createDocumentFragment();
+                _(this.queues.current).each(function (entryView) {
+                    fragment.appendChild(entryView.el);
+                });
+                this.el.appendChild(fragment);
+
+                return this;
+            },
+
+            /**
+             * Check which queue the entry belongs to then
+             * add a view to that queue
+             * @param EntryModel entry that needs to be queued
+             * @return EntriesView this
+             */
+            _addToProperQueue: function (entry) {
+                console.log('addToProperQueue');
+                // queued
+                if (entry.get('completed_at_ts') === null && !!! entry.get('res_type')) {
+                    this.queues.wait.push(new EntryView({ model: entry }));
+                }
+                else {
+                    console.warn('Warning: this does not belong to any status queues');
+                }
+
+                return this;
+            },
 
         });
     });
