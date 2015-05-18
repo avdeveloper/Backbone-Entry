@@ -8,125 +8,243 @@
 <body>
     <ul class="todos">
     </ul>
-    <script defer>
-    /**
-     * A To-do model
-     */
-    var TodoModel = Backbone.Model.extend({
-        
-        /**
-         * constructor
-         * This is run whenever a new to-do object is created
-         *
-         * @param Object attributes contains the data to store into this model
-         * @param Object options noop so far
-         * @return TodoModel created object
-         */
-        intialize: function (attributes, options) {
-            // no filters or validations just yet
-            this.set(attributes);
+    <script>
+        var sampleFormData, EntryModel, EntryView, EntriesCollection, EntriesView;
+
+        $(document).ready(function () {
+
+        sampleFormData = function () {
+            return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Duty","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":false,"ping_count":0,"all_arrived":1,"notes":"Notes that go over here should","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true}');
         }
-    });
-
-    /**
-     * View for a To-do item
-     */
-    var TodoView = Backbone.View.extend({
-        tagName: 'li',
-        className: function () {
-            return !! this.el ? this.el.className : 'todo';
-        },
-
-        initialize: function (options) {
-            this.model.bind('change:name', this.renderName, this); // we can perform micro updates to the DOM if we listen to individual change
-            this.render(); // should only be called once
-        },
-
-        renderName: function () {
-            this.$('.post-name').text( this.model.get('name') );
-            return this;
-        },
-
-        render: function () {
-            this.el.innerHTML = '<p class="post-name">' + this.model.get('name') + '</p>';
-            this.el.innerHTML += '<p class="post-desc">' + this.model.get('desc') + '</p>';
-            return this;
-        }
-    });
-
-    /**
-     * A collection of to-do items
-     */
-    var TodosCollection = Backbone.Collection.extend({
-        model: TodoModel,
-    });
-
-    /**
-     * View for the to-do collection
-     */
-    var TodosView = Backbone.View.extend({
 
         /**
-         * Constructor
-         * make sure to specify this.el which we'll be appending to
+         * Model for a waitlist entry
          */
-        initialize: function (options) {
-            this.currentFragment = document.createDocumentFragment();
-            this.collection.on('change:desc', function (todoModel) {
-                console.log('I am called');
-            }, this);
-            this.render();
-        },
+        EntryModel = Backbone.Model.extend({
 
-        render: function () {
-            this.collection.each(function (todo) {
-                var todoView = new TodoView( { model: todo } );
-                this.currentFragment.appendChild(todoView.el);
-            }, this);
-            this.el.appendChild(this.currentFragment);
-        }
+            /**
+             * constructor
+             * add any filters here or set up event listeners
+             * @param Object attributes for this entry
+             */
+            initialize: function (attributes) {
+                // error checking
+                if (attributes.id === null){
+                    // Logger.add('warn', 'Missing id in form data');
+                    console.warn('Missing id in form data');
+                }
+
+                this._changeCancelToNoShow();
+
+                if (this.get('completed_at_ts') === null) {
+                    this._updateWaitingTime();
+                }
+                else {
+                    this._updateWaitedTime();
+                }
+
+                // listen for any changes to the data
+                this.on('change:status', this._onStatusChanged, this);
+                this.on('change:checkedin_at', this._updateWaitingTime, this);
+            },
+
+            /**
+             * Hook for when status of the model changes
+             */
+            _onStatusChanged: function () {
+                this._changeCancelToNoShow();
+
+                // update completed timestamp if we just moved to history list
+                if ( /seat|noshow/i.test(this.get('status')) && ( this.get('completed_at_ts') === null || this._isSeatedFromNoShow() ) ) {
+                    //this.set('completed_at_ts', adjustedNow);
+                    this.set('completed_at_ts', Math.floor($.now() / 1000));
+                }
+
+                // we moved from history list back to current list
+                if ( /queued|notify/i.test(this.get('status')) && this.get('completed_at_ts') !== null ) {
+                    this.set('completed_at_ts', null);
+                }
+            },
+
+            /**
+             * Set it to noshow if status is cancel
+             * @return EntryModel this
+             */
+            _changeCancelToNoShow: function () {
+                if (this.get('status') === 'cancel') {
+                    this.set({ status: 'noshow' }, { silent: true }); // set to silent because the status just changed
+                }
+
+                return this;
+            },
+
+            /**
+             * Calculate how long the party has been waiting for
+             * @return EntryModel this
+             */
+            _updateWaitingTime: function () {
+                // this.minWaiting = Math.round( adjustedNow - parseInt(this.get('created_at_ts'), 10) / 60),
+                // this.minWaitingFormatted = WLApp.Util.min_to_human(this.minWaiting);
+                this.set({
+                    minWaiting: Math.round( ( Math.floor($.now()/1000) - this.get('created_at_ts') ) / 60),
+                    minWaitingFormatted: this.minWaiting // this should be humanized
+                });
+
+                if (this._isCheckedIn()) {
+                    this._updateMinutesInStore();
+                }
+
+                return this;
+            },
+
+            /**
+             * Calculate how long the party waited
+             * @return EntryModel this
+             */
+            _updateWaitedTime: function () {
+                // this.minWaited = Math.round( this.get('completed_at_ts') - parseInt(this.get('created_at_ts'), 10) / 60),
+                // this.minWaitedFormatted = WLApp.Util.min_to_human(this.minWaited);
+
+                return this.set({
+                    minWaited: Math.round( ( this.get('completed_at_ts') - parseInt(this.get('created_at_ts'), 10) ) / 60),
+                    minWaitingFormatted: this.minWaited // this should be humanized
+                });
+            },
+
+            /**
+             * Calculate how long the party has been waiting at the venue once checked in
+             * This will also be called upon check in
+             * @return EntryModel this
+             */
+            _updateMinutesInStore: function () {
+                var adjustedNow = Math.floor($.now()/1000), // use global adjustedNow
+                    checkedInAt = this.get('checkedin_at'),
+                    checkinDifference = (adjustedNow - checkedInAt),
+                    minutesInStore =  checkinDifference < 0 ? 0 : checkinDifference / 60;
+
+                return this.set({
+                    // minutesInStoreLong = WLApp.Util.min_to_human(Math.round(minutesInStore)),
+                    // minutesInStoreShort = Util.timeSince(checkedin_at, adjustedNow);
+                    minutesInStoreLong: Math.round(minutesInStore),
+                    minutesInStoreShort: Math.round(minutesInStore) 
+                });
+
+                //$item.find(".minutes-instore .minutes").text(minutesInStoreLong);
+                //$item.find(".minutes-instore .short").text(
+            },
+
+            /**
+             * Check if we are seating an entry from no-show status
+             * @return bool
+             */
+            _isSeatedFromNoShow: function () {
+                return this.previousAttributes().status === 'noshow' && this.get('status') === 'seat';
+            },
+
+            /**
+             * Check if entry is checked in
+             * @return bool
+             */
+            _isCheckedIn: function () {
+                return this.get('checkedin_at') !== null && this.get('checkedin_at') > 0;
+            },
+
+        });
+
+        /**
+         * View for a single entry
+         */
+        EntryView = Backbone.View.extend({
+            tagName: 'li',
+            template: _.template(document.getElementById('entry-tpl').innerHTML),
+
+            className: 'entry', // initial only, access className at: this.el.className
+
+            initialize: function (options) {
+                this.render();
+                this.model.bind('change', this.render, this);
+            },
+
+            render: function () {
+                this.el.innerHTML = this.template(this.model.toJSON());
+                return this;
+            }
+        });
+
+        /**
+         * A collection of entries
+         */
+        EntriesCollection = Backbone.Collection.extend({
+            model: EntryModel,
+        });
+
+        /**
+         * View for the entries collection
+         */
+        EntriesView = Backbone.View.extend({
+
+            /**
+             * Constructor
+             * make sure to specify this.el which we'll be appending to
+             */
+            initialize: function (options) {
+                this.currentFragment = document.createDocumentFragment();
+
+                this.collection.each(function (entry) {
+                    var entryView = new EntryView( { model: entry } );
+                    this.currentFragment.appendChild(entryView.el);
+                }, this);
+
+                // listen to model changes
+                this.collection.on('change:desc', console.log, this);
+                this.render();
+            },
+
+            render: function () {
+                this.el.appendChild(this.currentFragment);
+            }
+
+        });
     });
     </script>
-    <template id="entry-tpl">
-        <li id="waitlist_entry" style="display: none">
-            <div class="waitlist_container">
-                <span class="status-indicator"></span>
-                <span class="indicators">
-                    <span class="party-size"></span>
-                    <span class="time-big"></span>
-                    <span class="table-no"></span>
-                </span>
-                <div class="buttons">
-                    <?php if ($enable_profiles === true): ?>
-                        <a class="profile"></a>
-                    <?php endif; ?>
-                    <a class="notify"><span class="notify_number"></span></a>
-                    <a class="sat"></a>
-                    <a class="noshow"></a>
-                    <a class="moveback"></a>
-                </div>
-                <h1>John Doe</h1>
-                <div class="waittime">
-                    <span class="is-web">online</span>
-                    <span class="minutes-quoted"></span> 
-                    <span class="minutes-waited">
-                        <span class="hide_in_portrait minutes-waited-longform">waiting </span>
-                        <span class="minutes">0</span>
-                    </span> 
-                    <span class="minutes-instore">
-                        <span class="long">
-                            (<span class="minutes"></span>&nbsp;instore)
-                        </span>
-                        <span class="short"></span>
-                    </span>
-                    <span class="wait-since-ping">(<span class="minutes minutes-since-ping">0</span>m)</span>
-                </div>
-                <p class="phone"></p>
-                <p class="notes"></p>
-                <p class="user-response-text more"></p>
-                <p class="web-msg">online res made on <span class="created-date"></span></p>
+    <script id="entry-tpl" type="text/template">
+        <div class="waitlist_container">
+            <span class="status-indicator"></span>
+            <span class="indicators">
+                <span class="party-size"><%= size %></span>
+                <span class="time-big"></span>
+                <span class="table-no"><%= table_no %></span>
+            </span>
+            <div class="buttons">
+                <?php if ($enable_profiles === true): ?>
+                    <a class="profile"></a>
+                <?php endif; ?>
+                <a class="notify"><span class="notify_number"></span></a>
+                <a class="sat"></a>
+                <a class="noshow"></a>
+                <a class="moveback"></a>
             </div>
-        </li>
-    </template>
+            <h1><%= name %></h1>
+            <div class="waittime">
+                <span class="is-web">online</span>
+                <span class="minutes-quoted"></span> 
+                <span class="minutes-waited">
+                    <span class="hide_in_portrait minutes-waited-longform">waiting </span>
+                    <span class="minutes">0</span>
+                </span> 
+                <span class="minutes-instore">
+                    <span class="long">
+                        (<span class="minutes"></span>&nbsp;instore)
+                    </span>
+                    <span class="short"></span>
+                </span>
+                <span class="wait-since-ping">(<span class="minutes minutes-since-ping">0</span>m)</span>
+            </div>
+            <p class="phone"><%= phone /* Util.format_phone(phone) */ %></p>
+            <p class="notes"><%= notes %></p>
+            <p class="user-response-text more"></p>
+            <p class="web-msg">online res made on <span class="created-date"></span></p>
+        </div>
+    </script>
 </body>
 </html>
