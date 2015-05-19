@@ -4,12 +4,49 @@
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/backbone.js/1.2.0/backbone-min.js"></script>
+    <style>
+    .response-text {
+        display: -webkit-box;
+        display: -moz-flex;
+        display: -ms-flexbox;
+        display: flex;
+    }
+
+    .response-text::before,
+    .response-overflow,
+    .show-more {
+        margin: auto 0;
+    }
+
+    .has_user_response .response-text::before {
+        margin-right: 0.25em;
+        content: 'Response:';
+    }
+
+    .show-more::after {
+        content: 'more';
+    }
+
+    .response-overflow {
+        width: calc(50% - 4em);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    </style>
 </head>
 <body>
     <ul class="todos">
     </ul>
     <script>
-        var sampleFormData, EntryModel, EntryView, EntriesCollection, EntriesView;
+        var sampleFormData, EntryModel, EntryView, EntriesCollection, EntriesView, v;
+
+        var WLApp = {
+            config: {
+                enableTwoWayText: true,
+                maxResponseCharLength: 35
+            },
+        };
 
         $(document).ready(function () {
 
@@ -23,7 +60,18 @@
         EntryModel = Backbone.Model.extend({
 
             /**
-             * constructor
+             * default values
+             * returns a function so that the default object is not shared among the all the instances
+             */
+            defaults: function () {
+                return {
+                    response: ''
+                };
+            },
+
+
+            /**
+             * run first
              * add any filters here or set up event listeners
              * @param Object attributes for this entry
              */
@@ -76,15 +124,20 @@
              */
             _processResponse: function () {
                 var response = this.get('userResponse'),
-                    hasResponse = this.get('completed_at_ts') === null && response !== null && response.length > 0;
+                    hasResponse = this.get('completed_at_ts') === null && response !== null && response.length > 0,
+                    isError = response.match(/^Error:/),
+                    isUserResponse = WLApp.config.enableTwoWayText && this.get('status') !== 'usercancel';
 
-                if (hasResponse) {
-                    if (response.match(/^Error:/)) {
-                        this.set({ errorResponse: response });
+                if ( hasResponse && ( isError || isUserResponse ) ) {
+                    if (isError) {
+                        this.set({ response: response, responseType: 'error' });
                     }
-                    else if (/*WLApp.config.enableTwoWayText &&*/ this.get('status') !== 'usercancel') {
-                        this.set({ userResponse: 'Response: ' + response }, { silent: true }); // silence it so it doesn't trigger this function again
+                    else if (isUserResponse) {
+                        this.set({ response: response, responseType: 'user' });
                     }
+                }
+                else {
+                    this.set({ response: null, responseType: null });
                 }
             },
 
@@ -191,14 +244,16 @@
 
             render: function () {
                 var waitlistContainerEl = this.el.querySelector('.waitlist_container'),
-                    content = this.template(this.model.toJSON());
+                    isRendered = waitlistContainerEl !== null,
+                    content = this.template(_.extend(this.model.toJSON(), { isRendered: isRendered }));
 
-                if (waitlistContainerEl !== null) { // hasn't rendered initially yet, so include container
+                if (isRendered) {
                     waitlistContainerEl.innerHTML = content;
                 }
-                else { // just replace contents of container so that the className is not replaced by render()
+                else {
                     this.el.innerHTML = content;
                 }
+
                 return this;
             },
 
@@ -207,11 +262,11 @@
              * @return EntryView this
              */
             _onUserResponse: function (model) {
-                var response = model.get('userResponse'),
-                    error = model.get('errorResponse');
+                var responseType = model.get('responseType'),
+                    classList = this.el.querySelector('.waitlist_container').classList;
 
-                this.el.classList.toggle('has_user_response', !! response && response.length > 0);
-                this.el.classList.toggle('has_error_response', !! error && error.length > 0);
+                classList.toggle('has_user_response', responseType === 'user');
+                classList.toggle('has_error_response', responseType === 'error');
             },
 
         });
@@ -247,6 +302,10 @@
                 this.render();
             },
 
+            events: {
+                'click .show-more': '_showMore',
+            },
+
             /**
              * Refreshes which entries to show
              */
@@ -279,11 +338,44 @@
                 return this;
             },
 
+            /**
+             * Toggle whether to show more of the response text or not
+             * @param n.Event ev is the event that was triggered by the element
+             * @return EntriesView this
+             */
+            _showMore: function (ev) {
+                var responseContainerEl = ev.currentTarget.parentElement; // we use currentTarget, which the eventListener is bound to, instead of target
+                responseContainerEl.classList.toggle('showing-more');
+
+                return this;
+            }
+
         });
+
+        // Sample data
+        var sampleCollection = new EntriesCollection([sampleFormData(), sampleFormData(), sampleFormData() ]),
+            todosListEl = document.querySelector('.todos');
+
+        v = new EntriesView({ collection: sampleCollection, el: todosListEl });
+
+        // Show wait queue
+        var waitQueue = v.queues.wait,
+            waitEntriesToMove = waitQueue.splice(0,waitQueue.length); // this removes entryViews from wait Queue so that they can be moved elsewhere
+
+        v.queues.current = v.queues.current.concat(waitEntriesToMove); // usually we'd first move all entries in the current queue back to where they belong
+        v.render();
+
+        // test the user/error response
+        v.collection.first().set({ userResponse: 'This is an example user response that has no error but still exceeds the one line limit because it has over 35 maximum characters'})
+        v.collection.at(1).set({ userResponse: 'Error: This is an example error that exceeds the one line limit because it has over 35 maximum characters'})
     });
-    </script>
+
+
+</script>
     <script id="entry-tpl" type="text/template">
-        <div class="waitlist_container">
+        <% if (! isRendered) { %>
+            <div class="waitlist_container">
+        <% } %>
             <span class="status-indicator"></span>
             <span class="indicators">
                 <span class="party-size"><%= size %></span>
@@ -317,9 +409,18 @@
             </div>
             <p class="phone"><%= phone /* Util.format_phone(phone) */ %></p>
             <p class="notes"><%= notes %></p>
-            <p class="user-response-text more"></p>
+            <p class="response-text">
+                <% if (response.length > WLApp.config.maxResponseCharLength) { %>
+                    <span class="response-overflow"><%= response %></span>
+                    <a class="show-more"></a>
+                <% } else { %>
+                    <%= response %>
+                <% } %>
+            </p>
             <p class="web-msg">online res made on <span class="created-date"></span></p>
-        </div>
+        <% if (! isRendered) { %>
+            </div>
+        <% } %>
     </script>
 </body>
 </html>
