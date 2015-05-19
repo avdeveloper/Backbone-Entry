@@ -54,7 +54,7 @@
         $(document).ready(function () {
 
         sampleFormData = function () {
-            return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Duty","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":false,"ping_count":0,"all_arrived":1,"notes":"Notes that go over here should","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true}');
+            return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Duty","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":false,"ping_count":0,"all_arrived":1,"notes":"Notes that go over here should","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true, "status_color": "#ccc"}');
         }
 
         /**
@@ -86,6 +86,7 @@
                 }
 
                 this._changeCancelToNoShow();
+                this._processResponse();
 
                 if (this.get('completed_at_ts') === null) {
                     this._updateWaitingTime();
@@ -126,6 +127,7 @@
              * @return EntryModel this
              */
             _processResponse: function () {
+                // TODO use short-circuiting here if possible
                 var response = this.get('userResponse'),
                     hasResponse = this.get('completed_at_ts') === null && response !== null && response.length > 0,
                     isError = response.match(/^Error:/),
@@ -140,7 +142,7 @@
                     }
                 }
                 else {
-                    this.set({ response: null, responseType: null });
+                    this.set({ response: "", responseType: "" });
                 }
             },
 
@@ -237,39 +239,84 @@
 
             template: _.template(document.getElementById('entry-tpl').innerHTML),
 
+            // model attributes that would trigger a render of the entire entry
+            whitelistedAttributes: [ 'userResponse' ],
+
             className: 'entry', // initial only, access className at: this.el.className
 
             initialize: function (options) {
                 this.render();
-                this.model.bind('change:userResponse', this._onUserResponse, this);
-                this.model.bind('change', this.render, this);
+
+                this.model.on('change:name', this._changeName, this);
+                this.model.on('change:status_color', this._changeStatusColor, this);
+                this.model.on('change:userResponse', this._toggleResponseClassName, this);
+                this.model.on('change', this.render, this);
             },
 
-            render: function () {
-                var waitlistContainerEl = this.el.querySelector('.waitlist_container'),
-                    isRendered = waitlistContainerEl !== null,
-                    content = this.template(_.extend(this.model.toJSON(), { isRendered: isRendered }));
+            /**
+             * Renders the entire entry 
+             * Only use during initailization and when an attribute changes that requires another
+             * render, but that should be rare as we only want to render pieces of the view
+             * @param EntryModel model to be rendered
+             * @return EntryView this
+             */
+            render: function (model) {
+                if ( typeof model === 'undefined' || _.chain(model.changedAttributes()).keys().intersection(this.whitelistedAttributes).value().length > 0 ) {
+                    var waitlistContainerEl = this.el.querySelector('.waitlist_container'),
+                        isRendered = waitlistContainerEl !== null,
+                        content = this.template(_.extend(this.model.toJSON(), { isRendered: isRendered }));
 
-                if (isRendered) {
-                    waitlistContainerEl.innerHTML = content;
-                }
-                else {
-                    this.el.innerHTML = content;
+                    if (isRendered) { // Don't render waitlist_container because it may have classNames
+                        waitlistContainerEl.innerHTML = content;
+                    }
+                    else { // Render the entire entry
+                        this.el.innerHTML = content;
+
+                        if ( !! this.model.get('status_color') ) {
+                            this._changeStatusColor(this.model);
+                        }
+
+                        if ( !! this.model.get('userResponse') ) {
+                            this._toggleResponseClassName(this.model);
+                        }
+                    }
                 }
 
                 return this;
             },
 
             /**
-             * Process user response when there is one
+             * Change the name of the entry
+             * @param EntryModel model for this view
              * @return EntryView this
              */
-            _onUserResponse: function (model) {
+            _changeName: function (model) {
+                this.el.querySelector('.entry-name').innerText = model.get('name');
+                return this;
+            },
+
+            /**
+             * Set a background color to party size or remove it
+             * @param EntryModel model containing the change
+             * @return EntryView this
+             */
+            _changeStatusColor: function (model) {
+                this.el.querySelector('.party-size').style.backgroundColor = model.get('status_color');
+                return this;
+            },
+
+            /**
+             * Process user response when there is one
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _toggleResponseClassName: function (model) {
                 var responseType = model.get('responseType'),
                     classList = this.el.querySelector('.waitlist_container').classList;
 
                 classList.toggle('has_user_response', responseType === 'user');
                 classList.toggle('has_error_response', responseType === 'error');
+                return this;
             },
 
         });
@@ -329,7 +376,6 @@
              * @return EntriesView this
              */
             _addToProperQueue: function (entry) {
-                console.log('addToProperQueue');
                 // queued
                 if (entry.get('completed_at_ts') === null && !!! entry.get('res_type')) {
                     this.queues.wait.push(new EntryView({ model: entry }));
@@ -356,7 +402,7 @@
         });
 
         // Sample data
-        var sampleCollection = new EntriesCollection([sampleFormData(), sampleFormData(), sampleFormData() ]),
+        var sampleCollection = new EntriesCollection([_.extend(sampleFormData(), { userResponse: 'I do not have an error with me' }), _.extend(sampleFormData(), { status_color: null }), sampleFormData() ]),
             todosListEl = document.querySelector('.todos');
 
         v = new EntriesView({ collection: sampleCollection, el: todosListEl });
@@ -369,10 +415,11 @@
         v.render();
 
         // test the user/error response
-        v.collection.first().set({ userResponse: 'This is an example user response that has no error but still exceeds the one line limit because it has over 35 maximum characters'})
+        //v.collection.first().set({ userResponse: 'This is an example user response that has no error but still exceeds the one line limit because it has over 35 maximum characters'})
         v.collection.at(1).set({ userResponse: 'Error: This is an example error that exceeds the one line limit because it has over 35 maximum characters'})
     });
 
+    // TODO remove className .seated and replace it with status_seat
 
 </script>
     <script id="entry-tpl" type="text/template">
@@ -387,14 +434,14 @@
             </span>
             <div class="buttons">
                 <?php if ($enable_profiles === true): ?>
-                    <a class="profile"></a>
+                    <a class="profile <%= has_profile ? 'notempty' : '' %>"></a>
                 <?php endif; ?>
                 <a class="notify"><span class="notify_number"></span></a>
                 <a class="sat"></a>
                 <a class="noshow"></a>
                 <a class="moveback"></a>
             </div>
-            <h1><%= name %></h1>
+            <h1 class="entry-name"><%= name %></h1>
             <div class="waittime">
                 <span class="is-web">online</span>
                 <span class="minutes-quoted"></span> 
@@ -413,6 +460,7 @@
             <p class="phone"><%= phone /* Util.format_phone(phone) */ %></p>
             <p class="notes"><%= notes %></p>
             <p class="response-text">
+                <% /* restyle show more to fill the entire entry instead */ %>
                 <% if (response.length > WLApp.config.maxResponseCharLength) { %>
                     <span class="response-overflow"><%= response %></span>
                     <a class="show-more"></a>
