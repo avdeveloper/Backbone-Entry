@@ -117,9 +117,6 @@
                 if ( /queued|notify/i.test(this.get('status')) && this.get('completed_at_ts') !== null ) {
                     this.set('completed_at_ts', null);
                 }
-
-                // move queues
-                console.log(this.queues);
             },
 
             /**
@@ -248,6 +245,7 @@
                 this.render();
 
                 this.model.on('change:name', this._changeName, this);
+                this.model.on('change:status', this._changeStatusClassName, this);
                 this.model.on('change:status_color', this._changeStatusColor, this);
                 this.model.on('change:userResponse', this._toggleResponseClassName, this);
                 this.model.on('change', this.render, this);
@@ -272,6 +270,8 @@
                     else { // Render the entire entry
                         this.el.innerHTML = content;
 
+                        this._changeStatusClassName(this.model);
+
                         if ( !! this.model.get('status_color') ) {
                             this._changeStatusColor(this.model);
                         }
@@ -293,6 +293,17 @@
             _changeName: function (model) {
                 this.el.querySelector('.entry-name').innerText = model.get('name');
                 return this;
+            },
+
+            /**
+             * Change the waitlist container's className referring to status
+             * @param EntryModel model containing the change
+             * @return EntryView this
+             */
+            _changeStatusClassName: function (model) {
+                var waitlistContainerEl = this.el.querySelector('.waitlist_container');
+                waitlistContainerEl.className = waitlistContainerEl.className.replace(/status_\w+/g,'');
+                waitlistContainerEl.classList.add('status_' + model.get('status'));
             },
 
             /**
