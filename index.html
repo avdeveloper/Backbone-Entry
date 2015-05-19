@@ -10,17 +10,16 @@
         display: -moz-flex;
         display: -ms-flexbox;
         display: flex;
+        width: calc(50% - 4em);
     }
 
-    .response-text::before,
     .response-overflow,
     .show-more {
         margin: auto 0;
     }
 
-    .has_user_response .response-text::before {
-        margin-right: 0.25em;
-        content: 'Response:';
+    .show-more {
+        margin-top: 0;
     }
 
     .show-more::after {
@@ -28,10 +27,14 @@
     }
 
     .response-overflow {
-        width: calc(50% - 4em);
-        overflow: hidden;
         text-overflow: ellipsis;
+        overflow: hidden;
         white-space: nowrap;
+    }
+
+    .showing-more .response-overflow {
+        overflow: visible;
+        white-space: initial;
     }
     </style>
 </head>
@@ -133,7 +136,7 @@
                         this.set({ response: response, responseType: 'error' });
                     }
                     else if (isUserResponse) {
-                        this.set({ response: response, responseType: 'user' });
+                        this.set({ response: 'Response: ' + response, responseType: 'user' });
                     }
                 }
                 else {
