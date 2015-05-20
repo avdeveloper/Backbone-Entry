@@ -53,10 +53,6 @@
 
         $(document).ready(function () {
 
-        sampleFormData = function () {
-            return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Duty","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":false,"ping_count":0,"all_arrived":1,"notes":"Notes that go over here should","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true, "status_color": "#ccc"}');
-        }
-
         /**
          * Model for a waitlist entry
          */
@@ -249,6 +245,7 @@
                 this.model.on('change:status_color', this._changeStatusColor, this);
                 this.model.on('change:has_profile', this._toggleProfileClassName, this);
                 this.model.on('change:userResponse', this._toggleResponseClassName, this);
+                this.model.on('change:checkedin_at', this._toggleSeatEntryClassName, this);
                 // TODO move css style rules for res-entry and cas-entry
                 this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this);
                 this.model.on('change', this.render, this);
@@ -276,6 +273,7 @@
                         this._changeStatusClassName(this.model);
                         this._toggleProfileClassName(this.model);
                         this._toggleEntryTypeClassName(this.model);
+                        this._toggleSeatEntryClassName(this.model);
 
                         if ( !! this.model.get('status_color') ) {
                             this._changeStatusColor(this.model);
@@ -345,12 +343,28 @@
             },
 
             /**
+             * Toggle between seat or check-in entry button depending
+             * TODO replace .sat style rule with .seat-entry
+             * @param EntrModel model for this view
+             * @return EntryView this
+             */
+            _toggleSeatEntryClassName: function (model) {
+                var classList = this.el.querySelector('.seat-entry').classList,
+                    entry = model.pick('res_type', 'call_ahead_type', 'checkedin_at', 'call_ahead_checkedin_at'),
+                    showCheckInButton = (entry.res_type || entry.call_ahead_type) && entry.checkedin_at === null && entry.call_ahead_checkedin_at === null;
+
+                classList.toggle('check-in', showCheckInButton);
+            },
+
+            /**
              * Tag reservation and call-ahead entries
              * @param EntryModel model for this view
              * @return EntryView this
              */
             _toggleEntryTypeClassName: function (model) {
-                var classList = this.el.classList;
+                var classList = this.el.classList,
+                    entry = model.pick('res_type', 'call_ahead_type');
+
                 classList.toggle('res-entry', !! model.get('res_type'));
                 classList.toggle('cas-entry', !! model.get('call_ahead_type'));
             },
@@ -385,6 +399,7 @@
 
                 // listen to model changes
                 this.collection.on('change:status', this._addToProperQueue, this);
+                // this.collection.on('add', this._addToProperQueue?
                 this.render();
             },
 
@@ -417,7 +432,8 @@
                     this.queues.wait.push(new EntryView({ model: entry }));
                 }
                 else {
-                    console.warn('Warning: this does not belong to any status queues');
+                    // console.warn('Warning: this does not belong to any status queues');
+                    this.queues.wait.push(new EntryView({ model: entry }));
                 }
 
                 return this;
@@ -438,10 +454,18 @@
         });
 
         // Sample data
-        var sampleCollection = new EntriesCollection([_.extend(sampleFormData(), { userResponse: 'I do not have an error with me' }), _.extend(sampleFormData(), { status_color: null }), sampleFormData() ]),
-            todosListEl = document.querySelector('.todos');
+        
 
-        v = new EntriesView({ collection: sampleCollection, el: todosListEl });
+        var sampleFormData = function () {
+                return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Sample Name","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":true,"ping_count":0,"all_arrived":1,"notes":"Notes will go over here","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true}');
+            },
+            entries = [
+                _.extend(sampleFormData(), { name: 'Regular Entry' }),
+                _.extend(sampleFormData(), { name: 'Reservation Entry', res_type: true }),
+                _.extend(sampleFormData(), { name: 'Has Status Color', status_color: '#ccc' }),
+            ];
+
+        v = new EntriesView({ collection: new EntriesCollection(entries), el: document.querySelector('.todos') });
 
         // Show wait queue
         var waitQueue = v.queues.wait,
@@ -452,7 +476,7 @@
 
         // test the user/error response
         //v.collection.first().set({ userResponse: 'This is an example user response that has no error but still exceeds the one line limit because it has over 35 maximum characters'})
-        v.collection.at(1).set({ userResponse: 'Error: This is an example error that exceeds the one line limit because it has over 35 maximum characters'})
+        //v.collection.at(1).set({ userResponse: 'Error: This is an example error that exceeds the one line limit because it has over 35 maximum characters'})
     });
 
     // TODO remove className .seated and replace it with status_seat
@@ -473,7 +497,7 @@
                     <a class="profile <%= has_profile ? 'notempty' : '' %>"></a>
                 <?php endif; ?>
                 <a class="notify"><span class="notify_number"></span></a>
-                <a class="sat"></a>
+                <a class="seat-entry"></a>
                 <a class="noshow"></a>
                 <a class="moveback"></a>
             </div>
