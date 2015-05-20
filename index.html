@@ -247,7 +247,10 @@
                 this.model.on('change:name', this._changeName, this);
                 this.model.on('change:status', this._changeStatusClassName, this);
                 this.model.on('change:status_color', this._changeStatusColor, this);
+                this.model.on('change:has_profile', this._toggleProfileClassName, this);
                 this.model.on('change:userResponse', this._toggleResponseClassName, this);
+                // TODO move css style rules for res-entry and cas-entry
+                this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this);
                 this.model.on('change', this.render, this);
             },
 
@@ -271,6 +274,8 @@
                         this.el.innerHTML = content;
 
                         this._changeStatusClassName(this.model);
+                        this._toggleProfileClassName(this.model);
+                        this._toggleEntryTypeClassName(this.model);
 
                         if ( !! this.model.get('status_color') ) {
                             this._changeStatusColor(this.model);
@@ -317,6 +322,15 @@
             },
 
             /**
+             * Toggle between having or not having a profile icon on the button
+             * @param EntryModel model containing the change
+             * @return EntryView this
+             */
+            _toggleProfileClassName: function (model) {
+                this.el.querySelector('.profile').classList.toggle('notempty', model.get('has_profile'));
+            },
+
+            /**
              * Process user response when there is one
              * @param EntryModel model for this view
              * @return EntryView this
@@ -328,6 +342,17 @@
                 classList.toggle('has_user_response', responseType === 'user');
                 classList.toggle('has_error_response', responseType === 'error');
                 return this;
+            },
+
+            /**
+             * Tag reservation and call-ahead entries
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _toggleEntryTypeClassName: function (model) {
+                var classList = this.el.classList;
+                classList.toggle('res-entry', !! model.get('res_type'));
+                classList.toggle('cas-entry', !! model.get('call_ahead_type'));
             },
 
         });
