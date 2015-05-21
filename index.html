@@ -83,6 +83,7 @@
 
                 this._changeCancelToNoShow();
                 this._processResponse();
+                this._formatQuotedTime();
 
                 if (this.get('completed_at_ts') === null) {
                     this._updateWaitingTime();
@@ -94,6 +95,7 @@
                 // listen for any changes to the data
                 this.on('change:status', this._onStatus, this);
                 this.on('change:userResponse', this._processResponse, this);
+                this.on('change:quoted_time', this._formatQuotedTime, this);
                 this.on('change:checkedin_at', this._updateWaitingTime, this);
             },
 
@@ -128,14 +130,14 @@
 
                 if ( hasResponse && ( isError || isUserResponse ) ) {
                     if (isError) {
-                        this.set({ response: response, responseType: 'error' });
+                        return this.set({ response: response, responseType: 'error' });
                     }
                     else if (isUserResponse) {
-                        this.set({ response: 'Response: ' + response, responseType: 'user' });
+                        return this.set({ response: 'Response: ' + response, responseType: 'user' });
                     }
                 }
                 else {
-                    this.set({ response: "", responseType: "" });
+                    return this.set({ response: "", responseType: "" });
                 }
             },
 
@@ -149,6 +151,27 @@
                 }
 
                 return this;
+            },
+
+            /**
+             * Convert quote time to readable format
+             * @return EntryModel this
+             */
+            _formatQuotedTime: function () {
+                var quotedTime = this.get('quoted_time');
+
+                if (quotedTime > 0) {
+                    var hours = Math.floor( quotedTime / 60),
+                        minutes = quotedTime % 60;
+
+                    hours = hours < 1 ? '' : hours;
+                    minutes = minutes < 10 ? '0' + minutes : minutes;
+
+                    return this.set({ quotedTimeText: '(q'+hours+':'+minutes+')' });
+                }
+                else {
+                    return this.set({ quotedTimeText: '' });
+                }
             },
 
             /**
@@ -248,6 +271,7 @@
                 this.model.on('change:userResponse', this._toggleResponseClassName, this);
                 this.model.on('change:checkedin_at', this._toggleSeatEntryClassName, this);
                 this.model.on('change:hasPhone', this._toggleHasPhoneClassName, this);
+                this.model.on('change:quotedTimeText', this._changeQuotedTimeText, this);
                 // TODO move css style rules for res-entry and cas-entry
                 this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this);
                 this.model.on('change', this.render, this);
@@ -376,6 +400,16 @@
              */
             _toggleHasPhoneClassName: function (model) {
                 this.el.querySelector('.notify').classList.toggle('nophone', ! model.get('hasPhone'));
+                return this;
+            },
+
+            /**
+             * Update the value of the quoted time text
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _changeQuotedTimeText: function (model) {
+                this.el.querySelector('.minutes-quoted').innerText = model.get('quotedTimeText');
                 return this;
             },
 
@@ -519,7 +553,7 @@
             </span>
             <div class="buttons">
                 <?php if ($enable_profiles === true): ?>
-                    <a class="profile <%= has_profile ? 'notempty' : '' %>"></a>
+                    <a class="profile"></a>
                 <?php endif; ?>
                 <a class="notify"><span class="notify_number"></span></a>
                 <a class="sat"></a>
@@ -529,7 +563,7 @@
             <h1 class="entry-name"><%= name %></h1>
             <div class="waittime">
                 <span class="is-web">online</span>
-                <span class="minutes-quoted"></span> 
+                <span class="minutes-quoted"><%= quotedTimeText %></span> 
                 <span class="minutes-waited">
                     <span class="hide_in_portrait minutes-waited-longform">waiting </span>
                     <span class="minutes">0</span>
