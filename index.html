@@ -243,9 +243,11 @@
                 this.model.on('change:name', this._changeName, this);
                 this.model.on('change:status', this._changeStatusClassName, this);
                 this.model.on('change:status_color', this._changeStatusColor, this);
+                this.model.on('change:phone', this._changePhone, this);
                 this.model.on('change:has_profile', this._toggleProfileClassName, this);
                 this.model.on('change:userResponse', this._toggleResponseClassName, this);
                 this.model.on('change:checkedin_at', this._toggleSeatEntryClassName, this);
+                this.model.on('change:hasPhone', this._toggleHasPhoneClassName, this);
                 // TODO move css style rules for res-entry and cas-entry
                 this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this);
                 this.model.on('change', this.render, this);
@@ -274,6 +276,7 @@
                         this._toggleProfileClassName(this.model);
                         this._toggleEntryTypeClassName(this.model);
                         this._toggleSeatEntryClassName(this.model);
+                        this._toggleHasPhoneClassName(this.model);
 
                         if ( !! this.model.get('status_color') ) {
                             this._changeStatusColor(this.model);
@@ -344,16 +347,36 @@
 
             /**
              * Toggle between seat or check-in entry button depending
-             * TODO replace .sat style rule with .seat-entry
              * @param EntrModel model for this view
              * @return EntryView this
              */
             _toggleSeatEntryClassName: function (model) {
-                var classList = this.el.querySelector('.seat-entry').classList,
+                var classList = this.el.querySelector('.sat').classList,
                     entry = model.pick('res_type', 'call_ahead_type', 'checkedin_at', 'call_ahead_checkedin_at'),
                     showCheckInButton = (entry.res_type || entry.call_ahead_type) && entry.checkedin_at === null && entry.call_ahead_checkedin_at === null;
 
                 classList.toggle('check-in', showCheckInButton);
+                return this;
+            },
+
+            /**
+             * Update the phone number
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _changePhone: function (model) {
+                this.el.querySelector('.phone').innerText = model.get('phone');
+                return this;
+            },
+
+            /**
+             * Tag if an entry has no phone
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _toggleHasPhoneClassName: function (model) {
+                this.el.querySelector('.notify').classList.toggle('nophone', ! model.get('hasPhone'));
+                return this;
             },
 
             /**
@@ -367,6 +390,8 @@
 
                 classList.toggle('res-entry', !! model.get('res_type'));
                 classList.toggle('cas-entry', !! model.get('call_ahead_type'));
+
+                return this;
             },
 
         });
@@ -497,7 +522,7 @@
                     <a class="profile <%= has_profile ? 'notempty' : '' %>"></a>
                 <?php endif; ?>
                 <a class="notify"><span class="notify_number"></span></a>
-                <a class="seat-entry"></a>
+                <a class="sat"></a>
                 <a class="noshow"></a>
                 <a class="moveback"></a>
             </div>
