@@ -203,7 +203,7 @@
 
                 return this.set({
                     minWaited: Math.round( ( this.get('completed_at_ts') - parseInt(this.get('created_at_ts'), 10) ) / 60),
-                    minWaitingFormatted: this.minWaited // this should be humanized
+                    minWaitedFormatted: this.minWaited // this should be humanized
                 });
             },
 
@@ -272,8 +272,9 @@
                 this.model.on('change:checkedin_at', this._toggleSeatEntryClassName, this);
                 this.model.on('change:hasPhone', this._toggleHasPhoneClassName, this);
                 this.model.on('change:quotedTimeText', this._changeQuotedTimeText, this);
-                // TODO move css style rules for res-entry and cas-entry
-                this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this);
+                this.model.on('change:minWaiting', this._changeWaitingTime, this);
+                this.model.on('change:quote_time change:minWaiting', this._changeWaitTimeColor, this);
+                this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this); // TODO move css style rules for res-entry and cas-entry
                 this.model.on('change', this.render, this);
             },
 
@@ -301,6 +302,7 @@
                         this._toggleEntryTypeClassName(this.model);
                         this._toggleSeatEntryClassName(this.model);
                         this._toggleHasPhoneClassName(this.model);
+                        this._changeWaitTimeColor(this.model);
 
                         if ( !! this.model.get('status_color') ) {
                             this._changeStatusColor(this.model);
@@ -410,6 +412,48 @@
              */
             _changeQuotedTimeText: function (model) {
                 this.el.querySelector('.minutes-quoted').innerText = model.get('quotedTimeText');
+                return this;
+            },
+
+            /**
+             * Update the value of waiting time
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _changeWaitingTime: function (model) {
+                this.el.querySelector('.minutes').innerText = model.get('minWaitingFormatted');
+            },
+
+            // TODO also update the color
+            /**
+             * Change the color of the quoted time if actual wait time is close to quoted
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _changeWaitTimeColor: function (model) {
+                var entry = model.pick('quoted_time', 'created_at_ts'),
+                    el = this.el.querySelector('.minutes-waited'),
+                    className = 'minutes-waited ';
+
+                if (entry.quoted_time > 0) {
+                    var waitTime = ( new Date().getTime() / 1000 ) - parseInt(entry.created_at_ts, 10),
+                        differenceBetweenQuoteAndWaitTime = entry.quoted_time - waitTime;
+
+                    if ( (differenceBetweenQuoteAndWaitTime > 0) && 
+                         (
+                             (entry.quoted_time <= 15 && differenceBetweenQuoteAndWaitTime <= 3) ||
+                             (entry.quoted_time > 15 && differenceBetweenQuoteAndWaitTime <= 5)
+                         )
+                    ) {
+                        className += 'warning';
+                    }
+                    else if (waitTime >= entry.quoted_time) {
+                        className += 'alert';
+                    }
+
+                }
+
+                el.className = className;
                 return this;
             },
 
@@ -566,7 +610,7 @@
                 <span class="minutes-quoted"><%= quotedTimeText %></span> 
                 <span class="minutes-waited">
                     <span class="hide_in_portrait minutes-waited-longform">waiting </span>
-                    <span class="minutes">0</span>
+                    <span class="minutes"><%= minWaiting %></span>
                 </span> 
                 <span class="minutes-instore">
                     <span class="long">
