@@ -64,7 +64,9 @@
              */
             defaults: function () {
                 return {
-                    response: ''
+                    response: '',
+                    minutesInStoreLong: '',
+                    minutesInStoreShort: ''
                 };
             },
 
@@ -96,7 +98,7 @@
                 this.on('change:status', this._onStatus, this);
                 this.on('change:userResponse', this._processResponse, this);
                 this.on('change:quoted_time', this._formatQuotedTime, this);
-                this.on('change:checkedin_at', this._updateWaitingTime, this);
+                this.on('change:checkedin_at change:call_ahead_checkedin_at', this._updateWaitingTime, this);
             },
 
             /**
@@ -214,13 +216,14 @@
              */
             _updateMinutesInStore: function () {
                 var adjustedNow = Math.floor($.now()/1000), // use global adjustedNow
-                    checkedInAt = this.get('checkedin_at'),
+                    checkedInAt = this.get('checkedin_at') || this.get('call_ahead_checkedin_at'), // XXX one of these two have go to have a value, given that entry has checked in
                     checkinDifference = (adjustedNow - checkedInAt),
                     minutesInStore =  checkinDifference < 0 ? 0 : checkinDifference / 60;
 
                 return this.set({
                     // minutesInStoreLong = WLApp.Util.min_to_human(Math.round(minutesInStore)),
                     // minutesInStoreShort = Util.timeSince(checkedin_at, adjustedNow);
+                    minutesInStore: Math.round(minutesInStore),
                     minutesInStoreLong: Math.round(minutesInStore),
                     minutesInStoreShort: Math.round(minutesInStore) 
                 });
@@ -242,7 +245,10 @@
              * @return bool
              */
             _isCheckedIn: function () {
-                return this.get('checkedin_at') !== null && this.get('checkedin_at') > 0;
+                var entry = this.pick('checkedin_at', 'call_ahead_checkedin_at');
+
+                return ( entry.checkedin_at !== null && entry.checkedin_at > 0 ) ||
+                       ( entry.call_ahead_checkedin_at !== null && entry.call_ahead_checkedin_at > 0 );
             },
 
         });
@@ -274,6 +280,7 @@
                 this.model.on('change:quotedTimeText', this._changeQuotedTimeText, this);
                 this.model.on('change:minWaiting', this._changeWaitingTime, this);
                 this.model.on('change:quote_time change:minWaiting', this._changeWaitTimeColor, this);
+                this.model.on('change:minutesInStore', this._changeMinutesInStoreText, this);
                 this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this); // TODO move css style rules for res-entry and cas-entry
                 this.model.on('change', this.render, this);
             },
@@ -421,7 +428,7 @@
              * @return EntryView this
              */
             _changeWaitingTime: function (model) {
-                this.el.querySelector('.minutes').innerText = model.get('minWaitingFormatted');
+                this.el.querySelector('.minutes-waiting-text').innerText = model.get('minWaitingFormatted');
             },
 
             // TODO also update the color
@@ -454,6 +461,18 @@
                 }
 
                 el.className = className;
+                return this;
+            },
+
+            /**
+             * Update the text for the minutes in store
+             * @param EntryModel model for this view
+             * @return EntryView this
+             */
+            _changeMinutesInStoreText: function (model) {
+                var entry = model.pick('minutesInStoreLong', 'minutesInStoreShort');
+                this.el.querySelector('.minutes-instore-longform-text').innerText = entry.minutesInStoreLong;
+                this.el.querySelector('.minutes-instore-shortform-text').innerText = entry.minutesInStoreShort;
                 return this;
             },
 
@@ -610,13 +629,13 @@
                 <span class="minutes-quoted"><%= quotedTimeText %></span> 
                 <span class="minutes-waited">
                     <span class="hide_in_portrait minutes-waited-longform">waiting </span>
-                    <span class="minutes"><%= minWaiting %></span>
+                    <span class="minutes-waiting-text"><%= minWaiting %></span>
                 </span> 
                 <span class="minutes-instore">
                     <span class="long">
-                        (<span class="minutes"></span>&nbsp;instore)
+                        (<span class="minutes-instore-longform-text"><%= minutesInStoreLong %></span>&nbsp;instore)
                     </span>
-                    <span class="short"></span>
+                    <span class="minutes-instore-shortform-text"><%= minutesInStoreShort %></span>
                 </span>
                 <span class="wait-since-ping">(<span class="minutes minutes-since-ping">0</span>m)</span>
             </div>
