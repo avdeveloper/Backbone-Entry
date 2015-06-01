@@ -1,0 +1,39 @@
+.alert .minutes-waiting-text {
+    color: red;
+}
+
+.warning .minutes-waiting-text {
+    color: yellow;
+}
+
+.response-text {
+    display: -webkit-box;
+    display: -moz-flex;
+    display: -ms-flexbox;
+    display: flex;
+    width: calc(50% - 4em);
+}
+
+.response-overflow,
+.show-more {
+    margin: auto 0;
+}
+
+.show-more {
+    margin-top: 0;
+}
+
+.show-more::after {
+    content: 'more';
+}
+
+.response-overflow {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.showing-more .response-overflow {
+    overflow: visible;
+    white-space: initial;
+}

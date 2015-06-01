@@ -1,49 +1,15 @@
 <!DOCTYPE html>
-<html manifest="main.appcache">
+<html>
 <head>
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/backbone.js/1.2.0/backbone-min.js"></script>
-    <style>
-    .response-text {
-        display: -webkit-box;
-        display: -moz-flex;
-        display: -ms-flexbox;
-        display: flex;
-        width: calc(50% - 4em);
-    }
-
-    .response-overflow,
-    .show-more {
-        margin: auto 0;
-    }
-
-    .show-more {
-        margin-top: 0;
-    }
-
-    .show-more::after {
-        content: 'more';
-    }
-
-    .response-overflow {
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
-    }
-
-    .showing-more .response-overflow {
-        overflow: visible;
-        white-space: initial;
-    }
-    </style>
+    <link href="style.css" rel="stylesheet" type="text/css">
 </head>
 <body>
     <ul class="todos">
     </ul>
     <script>
-        var sampleFormData, EntryModel, EntryView, EntriesCollection, EntriesView, v;
-
         var WLApp = {
             config: {
                 enableTwoWayText: true,
@@ -51,559 +17,83 @@
             },
         };
 
-        $(document).ready(function () {
-
-        /**
-         * Model for a waitlist entry
-         */
-        EntryModel = Backbone.Model.extend({
-
-            /**
-             * default values
-             * returns a function so that the default object is not shared among the all the instances
-             */
-            defaults: function () {
-                return {
-                    response: '',
-                    minutesInStoreLong: '',
-                    minutesInStoreShort: ''
-                };
-            },
-
-
-            /**
-             * run first
-             * add any filters here or set up event listeners
-             * @param Object attributes for this entry
-             */
-            initialize: function (attributes) {
-                // error checking
-                if (attributes.id === null){
-                    // Logger.add('warn', 'Missing id in form data');
-                    console.warn('Missing id in form data');
-                }
-
-                this._changeCancelToNoShow();
-                this._processResponse();
-                this._formatQuotedTime();
-
-                if (this.get('completed_at_ts') === null) {
-                    this._updateWaitingTime();
-                }
-                else {
-                    this._updateWaitedTime();
-                }
-
-                // listen for any changes to the data
-                this.on('change:status', this._onStatus, this);
-                this.on('change:userResponse', this._processResponse, this);
-                this.on('change:quoted_time', this._formatQuotedTime, this);
-                this.on('change:checkedin_at change:call_ahead_checkedin_at', this._updateWaitingTime, this);
-            },
-
-            /**
-             * Hook for when status of the model changes
-             */
-            _onStatus: function () {
-                this._changeCancelToNoShow();
-
-                // update completed timestamp if we just moved to history list
-                if ( /seat|noshow/i.test(this.get('status')) && ( this.get('completed_at_ts') === null || this._isSeatedFromNoShow() ) ) {
-                    //this.set('completed_at_ts', adjustedNow);
-                    this.set('completed_at_ts', Math.floor($.now() / 1000));
-                }
-
-                // we moved from history list back to current list
-                if ( /queued|notify/i.test(this.get('status')) && this.get('completed_at_ts') !== null ) {
-                    this.set('completed_at_ts', null);
-                }
-            },
-
-            /**
-             * Process user/error response
-             * @return EntryModel this
-             */
-            _processResponse: function () {
-                // TODO use short-circuiting here if possible
-                var response = this.get('userResponse'),
-                    hasResponse = this.get('completed_at_ts') === null && response !== null && response.length > 0,
-                    isError = response.match(/^Error:/),
-                    isUserResponse = WLApp.config.enableTwoWayText && this.get('status') !== 'usercancel';
-
-                if ( hasResponse && ( isError || isUserResponse ) ) {
-                    if (isError) {
-                        return this.set({ response: response, responseType: 'error' });
-                    }
-                    else if (isUserResponse) {
-                        return this.set({ response: 'Response: ' + response, responseType: 'user' });
-                    }
-                }
-                else {
-                    return this.set({ response: "", responseType: "" });
-                }
-            },
-
-            /**
-             * Set it to noshow if status is cancel
-             * @return EntryModel this
-             */
-            _changeCancelToNoShow: function () {
-                if (this.get('status') === 'cancel') {
-                    this.set({ status: 'noshow' }, { silent: true }); // set to silent because the status just changed
-                }
-
-                return this;
-            },
-
-            /**
-             * Convert quote time to readable format
-             * @return EntryModel this
-             */
-            _formatQuotedTime: function () {
-                var quotedTime = this.get('quoted_time');
-
-                if (quotedTime > 0) {
-                    var hours = Math.floor( quotedTime / 60),
-                        minutes = quotedTime % 60;
-
-                    hours = hours < 1 ? '' : hours;
-                    minutes = minutes < 10 ? '0' + minutes : minutes;
-
-                    return this.set({ quotedTimeText: '(q'+hours+':'+minutes+')' });
-                }
-                else {
-                    return this.set({ quotedTimeText: '' });
-                }
-            },
-
-            /**
-             * Calculate how long the party has been waiting for
-             * @return EntryModel this
-             */
-            _updateWaitingTime: function () {
-                // this.minWaiting = Math.round( adjustedNow - parseInt(this.get('created_at_ts'), 10) / 60),
-                // this.minWaitingFormatted = WLApp.Util.min_to_human(this.minWaiting);
-                this.set({
-                    minWaiting: Math.round( ( Math.floor($.now()/1000) - this.get('created_at_ts') ) / 60),
-                    minWaitingFormatted: this.minWaiting // this should be humanized
-                });
-
-                if (this._isCheckedIn()) {
-                    this._updateMinutesInStore();
-                }
-
-                return this;
-            },
-
-            /**
-             * Calculate how long the party waited
-             * @return EntryModel this
-             */
-            _updateWaitedTime: function () {
-                // this.minWaited = Math.round( this.get('completed_at_ts') - parseInt(this.get('created_at_ts'), 10) / 60),
-                // this.minWaitedFormatted = WLApp.Util.min_to_human(this.minWaited);
-
-                return this.set({
-                    minWaited: Math.round( ( this.get('completed_at_ts') - parseInt(this.get('created_at_ts'), 10) ) / 60),
-                    minWaitedFormatted: this.minWaited // this should be humanized
-                });
-            },
-
-            /**
-             * Calculate how long the party has been waiting at the venue once checked in
-             * This will also be called upon check in
-             * @return EntryModel this
-             */
-            _updateMinutesInStore: function () {
-                var adjustedNow = Math.floor($.now()/1000), // use global adjustedNow
-                    checkedInAt = this.get('checkedin_at') || this.get('call_ahead_checkedin_at'), // XXX one of these two have go to have a value, given that entry has checked in
-                    checkinDifference = (adjustedNow - checkedInAt),
-                    minutesInStore =  checkinDifference < 0 ? 0 : checkinDifference / 60;
-
-                return this.set({
-                    // minutesInStoreLong = WLApp.Util.min_to_human(Math.round(minutesInStore)),
-                    // minutesInStoreShort = Util.timeSince(checkedin_at, adjustedNow);
-                    minutesInStore: Math.round(minutesInStore),
-                    minutesInStoreLong: Math.round(minutesInStore),
-                    minutesInStoreShort: Math.round(minutesInStore) 
-                });
-
-                //$item.find(".minutes-instore .minutes").text(minutesInStoreLong);
-                //$item.find(".minutes-instore .short").text(
-            },
-
-            /**
-             * Check if we are seating an entry from no-show status
-             * @return bool
-             */
-            _isSeatedFromNoShow: function () {
-                return this.previousAttributes().status === 'noshow' && this.get('status') === 'seat';
-            },
-
-            /**
-             * Check if entry is checked in
-             * @return bool
-             */
-            _isCheckedIn: function () {
-                var entry = this.pick('checkedin_at', 'call_ahead_checkedin_at');
-
-                return ( entry.checkedin_at !== null && entry.checkedin_at > 0 ) ||
-                       ( entry.call_ahead_checkedin_at !== null && entry.call_ahead_checkedin_at > 0 );
-            },
-
-        });
-
-        /**
-         * View for a single entry
-         */
-        EntryView = Backbone.View.extend({
-            tagName: 'li',
-
-            template: _.template(document.getElementById('entry-tpl').innerHTML),
-
-            // model attributes that would trigger a render of the entire entry
-            whitelistedAttributes: [ 'userResponse' ],
-
-            className: 'entry', // initial only, access className at: this.el.className
-
-            initialize: function (options) {
-                this.render();
-
-                this.model.on('change:name', this._changeName, this);
-                this.model.on('change:status', this._changeStatusClassName, this);
-                this.model.on('change:status_color', this._changeStatusColor, this);
-                this.model.on('change:phone', this._changePhone, this);
-                this.model.on('change:has_profile', this._toggleProfileClassName, this);
-                this.model.on('change:userResponse', this._toggleResponseClassName, this);
-                this.model.on('change:checkedin_at', this._toggleSeatEntryClassName, this);
-                this.model.on('change:hasPhone', this._toggleHasPhoneClassName, this);
-                this.model.on('change:quotedTimeText', this._changeQuotedTimeText, this);
-                this.model.on('change:minWaiting', this._changeWaitingTime, this);
-                this.model.on('change:quote_time change:minWaiting', this._changeWaitTimeColor, this);
-                this.model.on('change:minutesInStore', this._changeMinutesInStoreText, this);
-                this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this); // TODO move css style rules for res-entry and cas-entry
-                this.model.on('change', this.render, this);
-            },
-
-            /**
-             * Renders the entire entry 
-             * Only use during initailization and when an attribute changes that requires another
-             * render, but that should be rare as we only want to render pieces of the view
-             * @param EntryModel model to be rendered
-             * @return EntryView this
-             */
-            render: function (model) {
-                if ( typeof model === 'undefined' || _.chain(model.changedAttributes()).keys().intersection(this.whitelistedAttributes).value().length > 0 ) {
-                    var waitlistContainerEl = this.el.querySelector('.waitlist_container'),
-                        isRendered = waitlistContainerEl !== null,
-                        content = this.template(_.extend(this.model.toJSON(), { isRendered: isRendered }));
-
-                    if (isRendered) { // Don't render waitlist_container because it may have classNames
-                        waitlistContainerEl.innerHTML = content;
-                    }
-                    else { // Render the entire entry
-                        this.el.innerHTML = content;
-
-                        this._changeStatusClassName(this.model);
-                        this._toggleProfileClassName(this.model);
-                        this._toggleEntryTypeClassName(this.model);
-                        this._toggleSeatEntryClassName(this.model);
-                        this._toggleHasPhoneClassName(this.model);
-                        this._changeWaitTimeColor(this.model);
-
-                        if ( !! this.model.get('status_color') ) {
-                            this._changeStatusColor(this.model);
-                        }
-
-                        if ( !! this.model.get('userResponse') ) {
-                            this._toggleResponseClassName(this.model);
-                        }
-                    }
-                }
-
-                return this;
-            },
-
-            /**
-             * Change the name of the entry
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changeName: function (model) {
-                this.el.querySelector('.entry-name').innerText = model.get('name');
-                return this;
-            },
-
-            /**
-             * Change the waitlist container's className referring to status
-             * @param EntryModel model containing the change
-             * @return EntryView this
-             */
-            _changeStatusClassName: function (model) {
-                var waitlistContainerEl = this.el.querySelector('.waitlist_container');
-                waitlistContainerEl.className = waitlistContainerEl.className.replace(/status_\w+/g,'');
-                waitlistContainerEl.classList.add('status_' + model.get('status'));
-            },
-
-            /**
-             * Set a background color to party size or remove it
-             * @param EntryModel model containing the change
-             * @return EntryView this
-             */
-            _changeStatusColor: function (model) {
-                this.el.querySelector('.party-size').style.backgroundColor = model.get('status_color');
-                return this;
-            },
-
-            /**
-             * Toggle between having or not having a profile icon on the button
-             * @param EntryModel model containing the change
-             * @return EntryView this
-             */
-            _toggleProfileClassName: function (model) {
-                this.el.querySelector('.profile').classList.toggle('notempty', model.get('has_profile'));
-            },
-
-            /**
-             * Process user response when there is one
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _toggleResponseClassName: function (model) {
-                var responseType = model.get('responseType'),
-                    classList = this.el.querySelector('.waitlist_container').classList;
-
-                classList.toggle('has_user_response', responseType === 'user');
-                classList.toggle('has_error_response', responseType === 'error');
-                return this;
-            },
-
-            /**
-             * Toggle between seat or check-in entry button depending
-             * @param EntrModel model for this view
-             * @return EntryView this
-             */
-            _toggleSeatEntryClassName: function (model) {
-                var classList = this.el.querySelector('.sat').classList,
-                    entry = model.pick('res_type', 'call_ahead_type', 'checkedin_at', 'call_ahead_checkedin_at'),
-                    showCheckInButton = (entry.res_type || entry.call_ahead_type) && entry.checkedin_at === null && entry.call_ahead_checkedin_at === null;
-
-                classList.toggle('check-in', showCheckInButton);
-                return this;
-            },
-
-            /**
-             * Update the phone number
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changePhone: function (model) {
-                this.el.querySelector('.phone').innerText = model.get('phone');
-                return this;
-            },
-
-            /**
-             * Tag if an entry has no phone
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _toggleHasPhoneClassName: function (model) {
-                this.el.querySelector('.notify').classList.toggle('nophone', ! model.get('hasPhone'));
-                return this;
-            },
-
-            /**
-             * Update the value of the quoted time text
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changeQuotedTimeText: function (model) {
-                this.el.querySelector('.minutes-quoted').innerText = model.get('quotedTimeText');
-                return this;
-            },
-
-            /**
-             * Update the value of waiting time
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changeWaitingTime: function (model) {
-                this.el.querySelector('.minutes-waiting-text').innerText = model.get('minWaitingFormatted');
-            },
-
-            // TODO also update the color
-            /**
-             * Change the color of the quoted time if actual wait time is close to quoted
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changeWaitTimeColor: function (model) {
-                var entry = model.pick('quoted_time', 'created_at_ts'),
-                    el = this.el.querySelector('.minutes-waited'),
-                    className = 'minutes-waited ';
-
-                if (entry.quoted_time > 0) {
-                    var waitTime = ( new Date().getTime() / 1000 ) - parseInt(entry.created_at_ts, 10),
-                        differenceBetweenQuoteAndWaitTime = entry.quoted_time - waitTime;
-
-                    if ( (differenceBetweenQuoteAndWaitTime > 0) && 
-                         (
-                             (entry.quoted_time <= 15 && differenceBetweenQuoteAndWaitTime <= 3) ||
-                             (entry.quoted_time > 15 && differenceBetweenQuoteAndWaitTime <= 5)
-                         )
-                    ) {
-                        className += 'warning';
-                    }
-                    else if (waitTime >= entry.quoted_time) {
-                        className += 'alert';
-                    }
-
-                }
-
-                el.className = className;
-                return this;
-            },
-
-            /**
-             * Update the text for the minutes in store
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _changeMinutesInStoreText: function (model) {
-                var entry = model.pick('minutesInStoreLong', 'minutesInStoreShort');
-                this.el.querySelector('.minutes-instore-longform-text').innerText = entry.minutesInStoreLong;
-                this.el.querySelector('.minutes-instore-shortform-text').innerText = entry.minutesInStoreShort;
-                return this;
-            },
-
-            /**
-             * Tag reservation and call-ahead entries
-             * @param EntryModel model for this view
-             * @return EntryView this
-             */
-            _toggleEntryTypeClassName: function (model) {
-                var classList = this.el.classList,
-                    entry = model.pick('res_type', 'call_ahead_type');
-
-                classList.toggle('res-entry', !! model.get('res_type'));
-                classList.toggle('cas-entry', !! model.get('call_ahead_type'));
-
-                return this;
-            },
-
-        });
-
-        /**
-         * A collection of entries
-         */
-        EntriesCollection = Backbone.Collection.extend({
-            model: EntryModel,
-        });
-
-        /**
-         * View for the entries collection
-         */
-        EntriesView = Backbone.View.extend({
-
-            /**
-             * Constructor
-             * make sure to specify this.el which we'll be appending to
-             */
-            initialize: function (options) {
-                this.queues = {
-                    current: [],
-                    wait: [],
-                    res: [],
-                    sat: []
-                },
-
-                this.collection.each(this._addToProperQueue, this);
-
-                // listen to model changes
-                this.collection.on('change:status', this._addToProperQueue, this);
-                // this.collection.on('add', this._addToProperQueue?
-                this.render();
-            },
-
-            events: {
-                'click .show-more': '_showMore',
-            },
-
-            /**
-             * Refreshes which entries to show
-             */
-            render: function () {
-                var fragment = document.createDocumentFragment();
-                _(this.queues.current).each(function (entryView) {
-                    fragment.appendChild(entryView.el);
-                });
-                this.el.appendChild(fragment);
-
-                return this;
-            },
-
-            /**
-             * Check which queue the entry belongs to then
-             * add a view to that queue
-             * @param EntryModel entry that needs to be queued
-             * @return EntriesView this
-             */
-            _addToProperQueue: function (entry) {
-                // queued
-                if (entry.get('completed_at_ts') === null && !!! entry.get('res_type')) {
-                    this.queues.wait.push(new EntryView({ model: entry }));
-                }
-                else {
-                    // console.warn('Warning: this does not belong to any status queues');
-                    this.queues.wait.push(new EntryView({ model: entry }));
-                }
-
-                return this;
-            },
-
-            /**
-             * Toggle whether to show more of the response text or not
-             * @param n.Event ev is the event that was triggered by the element
-             * @return EntriesView this
-             */
-            _showMore: function (ev) {
-                var responseContainerEl = ev.currentTarget.parentElement; // we use currentTarget, which the eventListener is bound to, instead of target
-                responseContainerEl.classList.toggle('showing-more');
-
-                return this;
-            }
-
-        });
-
-        // Sample data
-        
-
         var sampleFormData = function () {
-                return JSON.parse('{"id":"' + (Math.floor( 1 + Math.random()*800) ) + '","sync_id":"aGA_1431760486","user_id":null,"has_profile":false,"name":"Sample Name","size":"2","phone":"555-555-5555","past_visits":0,"hasPhone":true,"ping_count":0,"all_arrived":1,"notes":"Notes will go over here","status":"queued","status_code":0,"status_color":null,"quoted_time":"120","table_no":null,"created_at_gmt":"2015-05-16 07:15:29","created_at_ts":1431760529,"updated_at_ts":1431760529,"ping1_at_ts":null,"ping2_at_ts":null,"ping3_at_ts":null,"completed_at_gmt":null,"completed_at_ts":null,"call_ahead_type":null,"checkedin_at":null,"call_ahead_checkedin_at":null,"res_type":null,"time_slot":0,"userResponse":"","waitlist_preseat_ids":null,"waitlist_preseat_names":null,"is_web":"0","type":"wait","predicted_secs":0,"predicted_ori_secs":0,"res_id":"923","version":"btbuild","since":1431760609,"lastSeqNo":894,"deviceId":"2_HSSStdyuGS","current_time":1431760715,"get_updates":true}');
-            },
-            entries = [
-                _.extend(sampleFormData(), { name: 'Regular Entry' }),
-                _.extend(sampleFormData(), { name: 'Reservation Entry', res_type: true }),
-                _.extend(sampleFormData(), { name: 'Has Status Color', status_color: '#ccc' }),
-            ];
+            var randomTimeStamp = ( new Date().getTime() / 1000 ); // - Math.round( Math.random() * 60 * 60 ); // from 2 hours from now at most
+            return  {
+                id: Math.round( 1 + Math.random() * 900 ),
+                sync_id: "aGA_1431760486",
+                user_id: null,
+                has_profile: false,
+                name: "Regular Entry",
+                size: Math.round( 1 + Math.random() * 10 ),
+                phone: "555-555-5555",
+                past_visits: 0,
+                hasPhone: true,
+                ping_count: 0,
+                all_arrived: 1,
+                notes: ['They have a baby to seat', 'Is allergic to shellfish', 'On a wedding anniversary', 'They like to be seated near the entrance for fresh air' ][Math.round( Math.random() * 3 )],
+                status: "queued",
+                status_code: 0,
+                status_color: null,
+                quoted_time: [5,15,30,45,60,90,120][ Math.round( Math.random() * 6 ) ],
+                table_no: null,
+                created_at_gmt: "2015-05-16 07:15:29",
+                created_at_ts: randomTimeStamp,
+                updated_at_ts: randomTimeStamp,
+                ping1_at_ts: null,
+                ping2_at_ts: null,
+                ping3_at_ts: null,
+                completed_at_gmt: null,
+                completed_at_ts: null,
+                call_ahead_type: null,
+                checkedin_at: null,
+                call_ahead_checkedin_at: null,
+                res_type: null,
+                time_slot: 0,
+                userResponse: "",
+                waitlist_preseat_ids: null,
+                waitlist_preseat_names: null,
+                is_web: "0",
+                type: "wait",
+                predicted_secs: 0,
+                predicted_ori_secs: 0,
+                res_id: "923",
+                version: "btbuild",
+                since: 1431760609,
+                lastSeqNo: 894,
+                deviceId: "2_HSSStdyuGS",
+                current_time: 1431760715,
+                get_updates: true,
+                response: "",
+                minutesInStoreLong: "",
+                minutesInStoreShort: "",
+                responseType: "",
+                quotedTimeText: "(q2:00)",
+            };
+        };
 
-        v = new EntriesView({ collection: new EntriesCollection(entries), el: document.querySelector('.todos') });
+        var entries = [
+            _.extend(sampleFormData(), { name: 'Regular Entry' }),
+            _.extend(sampleFormData(), { name: 'Reservation Entry', res_type: true }),
+            _.extend(sampleFormData(), { name: 'Has Status Color', status_color: '#ccc' }),
+        ];
 
-        // Show wait queue
-        var waitQueue = v.queues.wait,
-            waitEntriesToMove = waitQueue.splice(0,waitQueue.length); // this removes entryViews from wait Queue so that they can be moved elsewhere
+        var v;
 
-        v.queues.current = v.queues.current.concat(waitEntriesToMove); // usually we'd first move all entries in the current queue back to where they belong
-        v.render();
+        $(document).ready(function () {
+            v = new EntriesView({ collection: new EntriesCollection(entries), el: document.querySelector('.todos') });
 
-        // test the user/error response
-        //v.collection.first().set({ userResponse: 'This is an example user response that has no error but still exceeds the one line limit because it has over 35 maximum characters'})
-        //v.collection.at(1).set({ userResponse: 'Error: This is an example error that exceeds the one line limit because it has over 35 maximum characters'})
-    });
+            // Show wait queue
+            var waitQueue = v.queues.wait,
+                waitEntriesToMove = waitQueue.splice(0,waitQueue.length); // this removes entryViews from wait Queue so that they can be moved elsewhere
+
+            v.queues.current = v.queues.current.concat(waitEntriesToMove); // usually we'd first move all entries in the current queue back to where they belong
+            v.render();
+
+        });
 
     // TODO remove className .seated and replace it with status_seat
-
-</script>
+    </script>
     <script id="entry-tpl" type="text/template">
         <% if (! isRendered) { %>
             <div class="waitlist_container">
@@ -618,7 +108,9 @@
                 <?php if ($enable_profiles === true): ?>
                     <a class="profile"></a>
                 <?php endif; ?>
-                <a class="notify"><span class="notify_number"></span></a>
+                <a class="notify">
+                    <span class="notify_number"><%= ping_count %></span>
+                </a>
                 <a class="sat"></a>
                 <a class="noshow"></a>
                 <a class="moveback"></a>
@@ -655,5 +147,7 @@
             </div>
         <% } %>
     </script>
+    <script src="models.js"></script>
+    <script src="views.js"></script>
 </body>
 </html>
