@@ -53,6 +53,7 @@ var EntryModel = Backbone.Model.extend({
     updateWaitingTime: function () {
         // this.minWaiting = Math.round( adjustedNow - parseInt(this.get('created_at_ts'), 10) / 60),
         // this.minWaitingFormatted = WLApp.Util.min_to_human(this.minWaiting);
+        // WLApp.globals.adjustedNow
         var minWaiting = Math.floor( ( $.now()/1000 - this.get('created_at_ts') ) / 60 );
         this.set({
             minWaiting: minWaiting,
@@ -213,7 +214,6 @@ var EntriesCollection = Backbone.Collection.extend({
      * This runs every minute
      */
     _onInterval: function () {
-        console.log('I update waiting times');
         this.each(function (entry) { // TODO only entries that are queued
             entry.updateWaitingTime();
         });

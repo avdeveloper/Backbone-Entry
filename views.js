@@ -27,6 +27,7 @@ var EntryView = Backbone.View.extend({
         this.model.on('change:quote_time change:minWaiting', this._changeWaitTimeColor, this);
         this.model.on('change:minutesInStore', this._changeMinutesInStoreText, this);
         this.model.on('change:call_ahead_type change:res_type', this._toggleEntryTypeClassName, this); // TODO move css style rules for res-entry and cas-entry
+        this.model.on('change:ping_count', this._changePingCount, this);
         this.model.on('change', this.render, this);
     },
 
@@ -233,6 +234,20 @@ var EntryView = Backbone.View.extend({
         classList.toggle('res-entry', !! model.get('res_type'));
         classList.toggle('cas-entry', !! model.get('call_ahead_type'));
 
+        return this;
+    },
+
+    /**
+     * Change the ping count number
+     * @param EntryModel model for this view
+     * @return EntryView this
+     */
+    _changePingCount: function (model) {
+        var count = model.get('ping_count');
+        if (count > 0) {
+            this.el.querySelector('.notify_number').innerText = count;
+            this.el.querySelector('.notify').classList.remove('hidden');
+        }
         return this;
     },
 

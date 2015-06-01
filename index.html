@@ -108,7 +108,7 @@
                 <?php if ($enable_profiles === true): ?>
                     <a class="profile"></a>
                 <?php endif; ?>
-                <a class="notify">
+                <a class="notify <%= ping_count <= 0 ? 'hidden':'' %>">
                     <span class="notify_number"><%= ping_count %></span>
                 </a>
                 <a class="sat"></a>
